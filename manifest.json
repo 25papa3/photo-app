@@ -1,0 +1,15 @@
+{
+  "name": "写真整理アプリ",
+  "short_name": "写真整理",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#f0f2f5",
+  "theme_color": "#2196f3",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2954/2954840.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

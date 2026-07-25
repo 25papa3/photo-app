@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>写真整理アプリ</title>
+<link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2954/2954840.png">
+  <meta name="theme-color" content="#2196f3">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body { font-family: sans-serif; background-color: #f0f2f5; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 16px; }
+
+    .screen { display: none; width: 100%; max-width: 400px; flex-direction: column; align-items: center; }
+    .screen.active { display: flex; }
+
+    h1 { font-size: 1.3rem; margin-bottom: 16px; color: #333; text-align: center; }
+
+    .menu-btn-container { display: flex; flex-direction: column; gap: 16px; width: 80%; }
+    .btn-main { padding: 18px; font-size: 1.2rem; font-weight: bold; border: none; border-radius: 12px; background-color: #2196f3; color: white; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .btn-secondary { background-color: #4caf50; }
+    .btn-sub { background-color: #9c27b0; }
+
+    /* 撮影モード */
+    .camera-container { width: 100%; aspect-ratio: 3 / 4; background-color: #000; border-radius: 12px; overflow: hidden; position: relative; margin-bottom: 20px; display: flex; justify-content: center; align-items: center; }
+    video { width: 100%; height: 100%; object-fit: cover; }
+    canvas { display: none; }
+    .camera-controls { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 0 10px; }
+    .btn-shutter { width: 64px; height: 64px; border-radius: 50%; border: 4px solid #fff; background-color: #e91e63; cursor: pointer; }
+    .btn-exit { padding: 10px 16px; background-color: #757575; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
+
+    /* 整理モード 3x3 */
+    .grid-container { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 10px; width: 100%; aspect-ratio: 1 / 1; margin-bottom: 20px; }
+    .box { background-color: #ffffff; border: 2px dashed #ccc; border-radius: 12px; display: flex; flex-direction: column; justify-content: center; align-items: center; font-weight: bold; color: #555; position: relative; }
+    .box.drag-over { background-color: #e3f2fd; border-color: #2196f3; }
+    .box.center-box { border: 2px solid #4caf50; background-color: #f9f9f9; overflow: hidden; }
+    
+    /* 🖼 写真カード（画像の枠） */
+    .photo-card { width: 90%; height: 90%; border-radius: 8px; overflow: hidden; cursor: grab; box-shadow: 0 4px 8px rgba(0,0,0,0.2); position: relative; background-color: #000; }
+    .photo-card img { width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+    
+    .badge { position: absolute; top: 6px; right: 6px; background-color: #e91e63; color: white; font-size: 0.75rem; padding: 2px 8px; border-radius: 12px; z-index: 10; }
+
+    /* 編集・印刷画面 */
+    .edit-preview-box { width: 100%; aspect-ratio: 4 / 3; background-color: #e0e0e0; border-radius: 12px; display: flex; justify-content: center; align-items: center; margin-bottom: 16px; font-weight: bold; color: #666; overflow: hidden; position: relative; }
+    .edit-preview-box img { width: 100%; height: 100%; object-fit: contain; }
+    .edit-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; margin-bottom: 16px; }
+    .btn-tool { padding: 12px; font-weight: bold; border: 1px solid #ccc; border-radius: 8px; background-color: #fff; cursor: pointer; }
+    select { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ccc; font-weight: bold; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+
+  <!-- 1. メイン画面 -->
+  <div id="screenMainMenu" class="screen active">
+    <h1>📷 写真整理アプリ</h1>
+    <div class="menu-btn-container">
+      <button class="btn-main" onclick="openCamera()">撮影</button>
+      <button class="btn-main btn-secondary" onclick="showScreen('screenEditMenu')">編集</button>
+    </div>
+  </div>
+
+  <!-- 2. 撮影画面 -->
+  <div id="screenCamera" class="screen">
+    <h1>📷 撮影モード</h1>
+    <div class="camera-container">
+      <video id="video" autoplay playsinline></video>
+      <canvas id="canvas"></canvas>
+    </div>
+    <div class="camera-controls">
+      <div style="width: 80px;"></div>
+      <button class="btn-shutter" onclick="takePhoto()"></button>
+      <button class="btn-exit" onclick="closeCamera()">撮影終了</button>
+    </div>
+  </div>
+
+  <!-- 3. 編集メニュー画面 -->
+  <div id="screenEditMenu" class="screen">
+    <h1>📂 編集メニュー</h1>
+    <div class="menu-btn-container">
+      <button class="btn-main btn-secondary" onclick="startSorting()">整理</button>
+      <button class="btn-main btn-sub" onclick="openEditPrintMode()">編集・印刷</button>
+      <button class="btn-exit" style="margin-top:20px;" onclick="showScreen('screenMainMenu')">戻る</button>
+    </div>
+  </div>
+
+  <!-- 4. 整理画面 -->
+  <div id="screenSort" class="screen">
+    <h1>📷 写真をドラッグ整理</h1>
+    <div class="grid-container">
+      <div class="box folder" data-folder="家族">家族</div>
+      <div class="box folder" data-folder="学校">学校</div>
+      <div class="box folder" data-folder="職場">職場</div>
+      <div class="box folder" data-folder="友人">友人</div>
+      <div class="box center-box" id="centerBox">
+        <div class="badge" id="countBadge">残り 0枚</div>
+      </div>
+      <div class="box folder" data-folder="料理">料理</div>
+      <div class="box folder" data-folder="旅行">旅行</div>
+      <div class="box folder" data-folder="推し">推し</div>
+      <div class="box folder" data-folder="その他">その他</div>
+    </div>
+    <div style="width:100%; display:flex; justify-content:flex-end;">
+      <button class="btn-exit" onclick="showScreen('screenEditMenu')">整理終了</button>
+    </div>
+  </div>
+
+  <!-- 5. 編集・印刷画面 -->
+  <div id="screenEditPrint" class="screen">
+    <h1>🎨 編集・印刷・共有</h1>
+    
+    <select id="folderSelect" onchange="loadCategoryPhotos()">
+      <option value="家族">フォルダ選択：家族</option>
+      <option value="学校">フォルダ選択：学校</option>
+      <option value="職場">フォルダ選択：職場</option>
+      <option value="友人">フォルダ選択：友人</option>
+      <option value="料理">フォルダ選択：料理</option>
+      <option value="旅行">フォルダ選択：旅行</option>
+      <option value="推し">フォルダ選択：推し</option>
+      <option value="その他">フォルダ選択：その他</option>
+    </select>
+
+    <div class="edit-preview-box" id="editPreview">
+      写真を選択してください
+    </div>
+
+    <div class="edit-tools">
+      <button class="btn-tool" onclick="applyEffect('rotate')">🔄 90度回転</button>
+      <button class="btn-tool" onclick="applyEffect('grayscale')">🎨 モノクロ化</button>
+      <button class="btn-tool" onclick="applyEffect('frame')">🖼 枠デコ追加</button>
+      <button class="btn-tool" onclick="sharePhoto()">📤 写真を共有</button>
+      <button class="btn-tool" style="grid-column: span 2; background-color: #e91e63; color: white;" onclick="printPhoto()">🖨 ネット印刷指示</button>
+    </div>
+
+    <button class="btn-exit" style="width: 100%;" onclick="showScreen('screenEditMenu')">戻る</button>
+  </div>
+
+  <script>
+if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js')
+        .then(() => console.log('PWA Ready!'));
+    }
+    const API_URL = "http://192.168.0.30:5000/api";
+    let videoStream = null;
+    let photos = [];
+    let currentSelectedPhoto = null;
+
+    function showScreen(screenId) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById(screenId).classList.add('active');
+    }
+
+    // カメラ機能
+    async function openCamera() {
+      showScreen('screenCamera');
+      try {
+        videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+        document.getElementById('video').srcObject = videoStream;
+      } catch (err) {
+        alert("カメラの起動に失敗しました。");
+      }
+    }
+
+    function closeCamera() {
+      if (videoStream) videoStream.getTracks().forEach(track => track.stop());
+      showScreen('screenMainMenu');
+    }
+
+    async function takePhoto() {
+      const video = document.getElementById('video');
+      const canvas = document.getElementById('canvas');
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+
+      const context = canvas.getContext('2d');
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = canvas.toDataURL('image/jpeg');
+
+      try {
+        const res = await fetch(`${API_URL}/upload`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: imageData })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          video.style.opacity = '0.3';
+          setTimeout(() => video.style.opacity = '1', 150);
+        }
+      } catch (err) {
+        alert("写真の保存に失敗しました。");
+      }
+    }
+
+    // 整理機能
+    async function startSorting() {
+      showScreen('screenSort');
+      await fetchPhotos();
+    }
+
+    async function fetchPhotos() {
+      try {
+        const res = await fetch(`${API_URL}/photos`);
+        const data = await res.json();
+        photos = data.photos;
+        renderCenterPhoto();
+      } catch (err) {
+        alert("通信エラーが発生しました。");
+      }
+    }
+
+    // 🖼 スマホ・PC両対応のドラッグ描画処理
+    function renderCenterPhoto() {
+      const centerBox = document.getElementById("centerBox");
+      const countBadge = document.getElementById("countBadge");
+      const currentCard = centerBox.querySelector(".photo-card");
+      if (currentCard) currentCard.remove();
+
+      countBadge.innerText = `残り ${photos.length}枚`;
+
+      if (photos.length > 0) {
+        const currentPhoto = photos[0];
+        const card = document.createElement("div");
+        card.className = "photo-card";
+        card.draggable = true;
+
+        const img = document.createElement("img");
+        img.src = `${API_URL}/images/unsorted/${currentPhoto.name}?t=${new Date().getTime()}`;
+        card.appendChild(img);
+
+        // 💻 PC用（マウスドラッグ）
+        card.addEventListener("dragstart", (e) => {
+          e.dataTransfer.setData("text/plain", JSON.stringify(currentPhoto));
+        });
+
+        // 📱 スマホ用（タッチドラッグ）の登録
+        enableTouchDrag(card, currentPhoto);
+
+        centerBox.appendChild(card);
+      } else {
+        const doneMsg = document.createElement("div");
+        doneMsg.innerText = "写真なし🎉";
+        doneMsg.style.color = "#4caf50";
+        centerBox.appendChild(doneMsg);
+      }
+    }
+
+    // 📱 スマホ用タッチ操作ロジック
+    function enableTouchDrag(card, currentPhoto) {
+      let initialX, initialY;
+
+      card.addEventListener("touchstart", (e) => {
+        const touch = e.touches[0];
+        initialX = touch.clientX;
+        initialY = touch.clientY;
+        card.style.transition = "none";
+        card.style.zIndex = "1000";
+      }, { passive: false });
+
+      card.addEventListener("touchmove", (e) => {
+        e.preventDefault(); // 画面のスクロールを防止
+        const touch = e.touches[0];
+        const deltaX = touch.clientX - initialX;
+        const deltaY = touch.clientY - initialY;
+
+        // 写真を指の動きに合わせて移動
+        card.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(1.05)`;
+      }, { passive: false });
+
+      card.addEventListener("touchend", async (e) => {
+        const touch = e.changedTouches[0];
+        card.style.visibility = "hidden"; // 下にあるフォルダ要素を取得するため一時的に非表示
+        const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
+        card.style.visibility = "visible";
+
+        // 指を離した場所が「folder」クラスを持っているか確認
+        const folder = targetElement ? targetElement.closest(".folder") : null;
+
+        if (folder) {
+          const folderName = folder.getAttribute("data-folder");
+          await movePhotoToFolder(currentPhoto.name, folderName);
+        } else {
+          // フォルダ外で離した場合は元の位置に戻す
+          card.style.transition = "transform 0.2s ease";
+          card.style.transform = "translate(0px, 0px) scale(1)";
+        }
+      });
+    }
+
+    // 写真フォルダ移動APIの呼び出し共通化
+    async function movePhotoToFolder(photoName, folderName) {
+      try {
+        const res = await fetch(`${API_URL}/organize`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ photo_name: photoName, category: folderName })
+        });
+
+        if (res.ok) {
+          photos.shift();
+          renderCenterPhoto();
+        }
+      } catch (err) {
+        alert("通信エラーが発生しました");
+      }
+    }
+
+    // 💻 PC用ドロップイベント
+    const folders = document.querySelectorAll(".folder");
+    folders.forEach(folder => {
+      folder.addEventListener("dragover", (e) => { e.preventDefault(); folder.classList.add("drag-over"); });
+      folder.addEventListener("dragleave", () => { folder.classList.remove("drag-over"); });
+
+      folder.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        folder.classList.remove("drag-over");
+        if (photos.length === 0) return;
+
+        const folderName = folder.getAttribute("data-folder");
+        await movePhotoToFolder(photos[0].name, folderName);
+      });
+    });
+
+    // 編集・印刷・共有機能
+    function openEditPrintMode() {
+      showScreen('screenEditPrint');
+      loadCategoryPhotos();
+    }
+
+    async function loadCategoryPhotos() {
+      const folder = document.getElementById('folderSelect').value;
+      const preview = document.getElementById('editPreview');
+
+      try {
+        const res = await fetch(`${API_URL}/category_photos?category=${folder}`);
+        const data = await res.json();
+
+        if (data.photos.length > 0) {
+          currentSelectedPhoto = data.photos[0].name;
+          preview.innerHTML = `<img src="${API_URL}/images/${folder}/${currentSelectedPhoto}?t=${new Date().getTime()}">`;
+        } else {
+          currentSelectedPhoto = null;
+          preview.innerText = `「${folder}」フォルダに\n写真がありません`;
+        }
+      } catch (err) {
+        alert("写真の読み込みに失敗しました");
+      }
+    }
+
+    async function applyEffect(actionType) {
+      if (!currentSelectedPhoto) return alert("写真が選択されていません");
+      const folder = document.getElementById('folderSelect').value;
+
+      try {
+        const res = await fetch(`${API_URL}/edit_photo`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category: folder, photo_name: currentSelectedPhoto, action: actionType })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          loadCategoryPhotos();
+        }
+      } catch (err) {
+        alert("編集処理に失敗しました");
+      }
+    }
+
+    function sharePhoto() {
+      if (!currentSelectedPhoto) return alert("写真が選択されていません");
+      alert(`📤 共有機能：[ ${currentSelectedPhoto} ] を共有準備完了！`);
+    }
+
+    function printPhoto() {
+      if (!currentSelectedPhoto) return alert("写真が選択されていません");
+      alert(`🖨 ネット印刷指示：\n予約番号： PRINT-${Math.floor(1000 + Math.random() * 9000)}\n印刷準備完了！`);
+    }
+  </script>
+</body>
+</html>

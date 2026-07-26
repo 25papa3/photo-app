@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>写真整理アプリ</title>
-<link rel="manifest" href="manifest.json">
+  <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2954/2954840.png">
   <meta name="theme-color" content="#2196f3">
   <style>
@@ -64,7 +64,8 @@
   <div id="screenCamera" class="screen">
     <h1>📷 撮影モード</h1>
     <div class="camera-container">
-      <video id="video" autoplay playsinline></video>
+      <!-- 💡 スマホで動画を表示するため muted, playsinline, autoplay を設定 -->
+      <video id="video" autoplay playsinline muted></video>
       <canvas id="canvas"></canvas>
     </div>
     <div class="camera-controls">
@@ -136,14 +137,21 @@
   </div>
 
   <script>
-if ('serviceWorker' in navigator) {
+    if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js')
         .then(() => console.log('PWA Ready!'));
     }
+
     const API_URL = "https://bulk-diagram-fasting.ngrok-free.dev/api";
     let videoStream = null;
     let photos = [];
     let currentSelectedPhoto = null;
+
+    // 💡 ngrokの警告回避用の共通ヘッダー
+    const NGROK_HEADERS = {
+      'ngrok-skip-browser-warning': 'true',
+      'Content-Type': 'application/json'
+    };
 
     function showScreen(screenId) {
       document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -154,15 +162,23 @@ if ('serviceWorker' in navigator) {
     async function openCamera() {
       showScreen('screenCamera');
       try {
-        videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
-        document.getElementById('video').srcObject = videoStream;
+        videoStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
+        const video = document.getElementById('video');
+        video.srcObject = videoStream;
+        await video.play(); // 💡 カメラ起動を確実にするための明示的再生指示
       } catch (err) {
-        alert("カメラの起動に失敗しました。");
+        alert("カメラの起動に失敗しました。アクセス許可を確認してください。");
       }
     }
 
     function closeCamera() {
-      if (videoStream) videoStream.getTracks().forEach(track => track.stop());
+      if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+        videoStream = null;
+      }
       showScreen('screenMainMenu');
     }
 
@@ -179,7 +195,7 @@ if ('serviceWorker' in navigator) {
       try {
         const res = await fetch(`${API_URL}/upload`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: NGROK_HEADERS,
           body: JSON.stringify({ image: imageData })
         });
         const data = await res.json();
@@ -200,17 +216,29 @@ if ('serviceWorker' in navigator) {
 
     async function fetchPhotos() {
       try {
-        const res = await fetch(`${API_URL}/photos`);
+        const res = await fetch(`${API_URL}/photos`, {
+          headers: NGROK_HEADERS
+        });
         const data = await res.json();
-        photos = data.photos;
+        photos = data.photos || [];
         renderCenterPhoto();
       } catch (err) {
         alert("通信エラーが発生しました。");
       }
     }
 
+    // 🖼 ngrok警告をバイパスして画像Blobを取得して表示する関数
+    async function fetchImageBlob(folder, filename) {
+      const imageUrl = `${API_URL}/images/${folder}/${filename}`;
+      const response = await fetch(imageUrl, {
+        headers: { 'ngrok-skip-browser-warning': 'true' }
+      });
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+    }
+
     // 🖼 スマホ・PC両対応のドラッグ描画処理
-    function renderCenterPhoto() {
+    async function renderCenterPhoto() {
       const centerBox = document.getElementById("centerBox");
       const countBadge = document.getElementById("countBadge");
       const currentCard = centerBox.querySelector(".photo-card");
@@ -225,7 +253,12 @@ if ('serviceWorker' in navigator) {
         card.draggable = true;
 
         const img = document.createElement("img");
-        img.src = `${API_URL}/images/unsorted/${currentPhoto.name}?t=${new Date().getTime()}`;
+        // 💡 ngrok警告回避ヘッダーを通して画像のURL（Blob）を取得して表示
+        try {
+          img.src = await fetchImageBlob('unsorted', currentPhoto.name);
+        } catch (e) {
+          console.error("画像取得エラー", e);
+        }
         card.appendChild(img);
 
         // 💻 PC用（マウスドラッグ）
@@ -263,24 +296,21 @@ if ('serviceWorker' in navigator) {
         const deltaX = touch.clientX - initialX;
         const deltaY = touch.clientY - initialY;
 
-        // 写真を指の動きに合わせて移動
         card.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(1.05)`;
       }, { passive: false });
 
       card.addEventListener("touchend", async (e) => {
         const touch = e.changedTouches[0];
-        card.style.visibility = "hidden"; // 下にあるフォルダ要素を取得するため一時的に非表示
+        card.style.visibility = "hidden";
         const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
         card.style.visibility = "visible";
 
-        // 指を離した場所が「folder」クラスを持っているか確認
         const folder = targetElement ? targetElement.closest(".folder") : null;
 
         if (folder) {
           const folderName = folder.getAttribute("data-folder");
           await movePhotoToFolder(currentPhoto.name, folderName);
         } else {
-          // フォルダ外で離した場合は元の位置に戻す
           card.style.transition = "transform 0.2s ease";
           card.style.transform = "translate(0px, 0px) scale(1)";
         }
@@ -292,7 +322,7 @@ if ('serviceWorker' in navigator) {
       try {
         const res = await fetch(`${API_URL}/organize`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: NGROK_HEADERS,
           body: JSON.stringify({ photo_name: photoName, category: folderName })
         });
 
@@ -332,12 +362,15 @@ if ('serviceWorker' in navigator) {
       const preview = document.getElementById('editPreview');
 
       try {
-        const res = await fetch(`${API_URL}/category_photos?category=${folder}`);
+        const res = await fetch(`${API_URL}/category_photos?category=${folder}`, {
+          headers: NGROK_HEADERS
+        });
         const data = await res.json();
 
-        if (data.photos.length > 0) {
+        if (data.photos && data.photos.length > 0) {
           currentSelectedPhoto = data.photos[0].name;
-          preview.innerHTML = `<img src="${API_URL}/images/${folder}/${currentSelectedPhoto}?t=${new Date().getTime()}">`;
+          const blobUrl = await fetchImageBlob(folder, currentSelectedPhoto);
+          preview.innerHTML = `<img src="${blobUrl}">`;
         } else {
           currentSelectedPhoto = null;
           preview.innerText = `「${folder}」フォルダに\n写真がありません`;
@@ -354,7 +387,7 @@ if ('serviceWorker' in navigator) {
       try {
         const res = await fetch(`${API_URL}/edit_photo`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: NGROK_HEADERS,
           body: JSON.stringify({ category: folder, photo_name: currentSelectedPhoto, action: actionType })
         });
         const data = await res.json();

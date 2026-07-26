@@ -361,7 +361,7 @@
 
         if (data.photos && data.photos.length > 0) {
           currentSelectedPhoto = data.photos[0].name;
-          const fullImgUrl = `${API_URL}/api/images/${encodeURIComponent(folder)}/${encodeURIComponent(currentSelectedPhoto)}?_=${new Date().getTime()}`;
+          const fullImgUrl = `${API_URL}/api/images/unsorted/${encodeURIComponent(currentPhoto.name)}?_=${new Date().getTime()}`;
           
           const imgRes = await fetch(fullImgUrl, { headers: NGROK_HEADERS });
           const blob = await imgRes.blob();

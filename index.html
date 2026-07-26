@@ -64,7 +64,6 @@
   <div id="screenCamera" class="screen">
     <h1>📷 撮影モード</h1>
     <div class="camera-container">
-      <!-- 💡 スマホで動画を表示するため muted, playsinline, autoplay を設定 -->
       <video id="video" autoplay playsinline muted></video>
       <canvas id="canvas"></canvas>
     </div>
@@ -147,7 +146,6 @@
     let photos = [];
     let currentSelectedPhoto = null;
 
-    // 💡 ngrokの警告回避用の共通ヘッダー
     const NGROK_HEADERS = {
       'ngrok-skip-browser-warning': 'true',
       'Content-Type': 'application/json'
@@ -168,7 +166,7 @@
         });
         const video = document.getElementById('video');
         video.srcObject = videoStream;
-        await video.play(); // 💡 カメラ起動を確実にするための明示的再生指示
+        await video.play();
       } catch (err) {
         alert("カメラの起動に失敗しました。アクセス許可を確認してください。");
       }
@@ -227,22 +225,8 @@
       }
     }
 
-    // 🖼 ngrok警告をバイパスして画像Blobを取得して表示する関数
-    async function fetchImageBlob(folder, filename) {
-      // 💡 unsorted の場合は Python側の「未整理」フォルダ名に合わせる
-      const targetFolder = (folder === 'unsorted') ? '未整理' : folder;
-      const imageUrl = `${API_URL}/images/${encodeURIComponent(targetFolder)}/${encodeURIComponent(filename)}`;
-      
-      const response = await fetch(imageUrl, {
-        headers: { 'ngrok-skip-browser-warning': 'true' }
-      });
-      if (!response.ok) throw new Error("画像の取得に失敗しました");
-      const blob = await response.blob();
-      return URL.createObjectURL(blob);
-    }
-
-    // 🖼 スマホ・PC両対応のドラッグ描画処理
-    async function renderCenterPhoto() {
+    // 🖼 整理画面の描画処理（Base64直接表示）
+    function renderCenterPhoto() {
       const centerBox = document.getElementById("centerBox");
       const countBadge = document.getElementById("countBadge");
       const currentCard = centerBox.querySelector(".photo-card");
@@ -257,20 +241,16 @@
         card.draggable = true;
 
         const img = document.createElement("img");
-        // 💡 ngrok警告回避ヘッダーを通して画像のURL（Blob）を取得して表示
-        try {
-          img.src = await fetchImageBlob('unsorted', currentPhoto.name);
-        } catch (e) {
-          console.error("画像取得エラー", e);
-        }
+        // APIから受け取った Base64 画像データを直接セット
+        img.src = currentPhoto.src;
         card.appendChild(img);
 
-        // 💻 PC用（マウスドラッグ）
+        // PC用（マウスドラッグ）
         card.addEventListener("dragstart", (e) => {
           e.dataTransfer.setData("text/plain", JSON.stringify(currentPhoto));
         });
 
-        // 📱 スマホ用（タッチドラッグ）の登録
+        // スマホ用（タッチドラッグ）
         enableTouchDrag(card, currentPhoto);
 
         centerBox.appendChild(card);
@@ -295,7 +275,7 @@
       }, { passive: false });
 
       card.addEventListener("touchmove", (e) => {
-        e.preventDefault(); // 画面のスクロールを防止
+        e.preventDefault();
         const touch = e.touches[0];
         const deltaX = touch.clientX - initialX;
         const deltaY = touch.clientY - initialY;
@@ -321,7 +301,7 @@
       });
     }
 
-    // 写真フォルダ移動APIの呼び出し共通化
+    // 写真フォルダ移動APIの呼び出し
     async function movePhotoToFolder(photoName, folderName) {
       try {
         const res = await fetch(`${API_URL}/organize`, {
@@ -339,7 +319,7 @@
       }
     }
 
-    // 💻 PC用ドロップイベント
+    // PC用ドロップイベント
     const folders = document.querySelectorAll(".folder");
     folders.forEach(folder => {
       folder.addEventListener("dragover", (e) => { e.preventDefault(); folder.classList.add("drag-over"); });
@@ -366,15 +346,14 @@
       const preview = document.getElementById('editPreview');
 
       try {
-        const res = await fetch(`${API_URL}/category_photos?category=${folder}`, {
+        const res = await fetch(`${API_URL}/category_photos?category=${encodeURIComponent(folder)}`, {
           headers: NGROK_HEADERS
         });
         const data = await res.json();
 
         if (data.photos && data.photos.length > 0) {
           currentSelectedPhoto = data.photos[0].name;
-          const blobUrl = await fetchImageBlob(folder, currentSelectedPhoto);
-          preview.innerHTML = `<img src="${blobUrl}">`;
+          preview.innerHTML = `<img src="${data.photos[0].src}">`;
         } else {
           currentSelectedPhoto = null;
           preview.innerText = `「${folder}」フォルダに\n写真がありません`;

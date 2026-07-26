@@ -35,8 +35,8 @@
     .box.drag-over { background-color: #e3f2fd; border-color: #2196f3; }
     .box.center-box { border: 2px solid #4caf50; background-color: #f9f9f9; overflow: hidden; }
     
-    /* 🖼 写真カード（画像の枠） */
-    .photo-card { width: 90%; height: 90%; border-radius: 8px; overflow: hidden; cursor: grab; box-shadow: 0 4px 8px rgba(0,0,0,0.2); position: relative; background-color: #000; }
+    /* 🖼 写真カード */
+    .photo-card { width: 90%; height: 90%; border-radius: 8px; overflow: hidden; cursor: grab; box-shadow: 0 4px 8px rgba(0,0,0,0.2); position: relative; background-color: #fff; display: flex; align-items: center; justify-content: center; }
     .photo-card img { width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
     
     .badge { position: absolute; top: 6px; right: 6px; background-color: #e91e63; color: white; font-size: 0.75rem; padding: 2px 8px; border-radius: 12px; z-index: 10; }
@@ -147,8 +147,7 @@
     let currentSelectedPhoto = null;
 
     const NGROK_HEADERS = {
-      'ngrok-skip-browser-warning': 'true',
-      'Content-Type': 'application/json'
+      'ngrok-skip-browser-warning': 'true'
     };
 
     function showScreen(screenId) {
@@ -193,7 +192,7 @@
       try {
         const res = await fetch(`${API_URL}/upload`, {
           method: 'POST',
-          headers: NGROK_HEADERS,
+          headers: { ...NGROK_HEADERS, 'Content-Type': 'application/json' },
           body: JSON.stringify({ image: imageData })
         });
         const data = await res.json();
@@ -214,9 +213,7 @@
 
     async function fetchPhotos() {
       try {
-        const res = await fetch(`${API_URL}/photos`, {
-          headers: NGROK_HEADERS
-        });
+        const res = await fetch(`${API_URL}/photos`, { headers: NGROK_HEADERS });
         const data = await res.json();
         photos = data.photos || [];
         renderCenterPhoto();
@@ -225,7 +222,7 @@
       }
     }
 
-    // 🖼 整理画面の描画処理（Base64直接表示）
+    // 🖼 整理画面の描画処理
     function renderCenterPhoto() {
       const centerBox = document.getElementById("centerBox");
       const countBadge = document.getElementById("countBadge");
@@ -240,10 +237,18 @@
         card.className = "photo-card";
         card.draggable = true;
 
-        const img = document.createElement("img");
-        // APIから受け取った Base64 画像データを直接セット
-        img.src = currentPhoto.src;
-        card.appendChild(img);
+        if (currentPhoto.src) {
+          const img = document.createElement("img");
+          img.src = currentPhoto.src;
+          img.onerror = () => {
+            card.innerText = "画像読み込みエラー";
+            card.style.fontSize = "12px";
+          };
+          card.appendChild(img);
+        } else {
+          card.innerText = "画像データなし";
+          card.style.fontSize = "12px";
+        }
 
         // PC用（マウスドラッグ）
         card.addEventListener("dragstart", (e) => {
@@ -306,7 +311,7 @@
       try {
         const res = await fetch(`${API_URL}/organize`, {
           method: "POST",
-          headers: NGROK_HEADERS,
+          headers: { ...NGROK_HEADERS, 'Content-Type': 'application/json' },
           body: JSON.stringify({ photo_name: photoName, category: folderName })
         });
 
@@ -370,7 +375,7 @@
       try {
         const res = await fetch(`${API_URL}/edit_photo`, {
           method: 'POST',
-          headers: NGROK_HEADERS,
+          headers: { ...NGROK_HEADERS, 'Content-Type': 'application/json' },
           body: JSON.stringify({ category: folder, photo_name: currentSelectedPhoto, action: actionType })
         });
         const data = await res.json();

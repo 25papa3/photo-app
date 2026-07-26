@@ -141,8 +141,13 @@
       .then(() => console.log('PWA Ready!'));
   }
 
-  // 💡 ここを末尾スラッシュなしのngrok URLに統一
   const API_URL = "https://bulk-diagram-fasting.ngrok-free.dev";
+
+  // 💡 キャッシュ（古いデータ）を強制回避するためのヘルパー関数
+  function getUrlWithCacheBust(url) {
+    const timestamp = new Date().getTime();
+    return url.includes('?') ? `${url}&_=${timestamp}` : `${url}?_=${timestamp}`;
+  }
   let videoStream = null;
   let photos = [];
   let currentSelectedPhoto = null;
@@ -242,8 +247,8 @@
 
       try {
         // 画像URLを組み立ててfetchで取得
-        const fullImgUrl = `${API_URL}${currentPhoto.src}`;
-        const response = await fetch(fullImgUrl, { headers: NGROK_HEADERS });
+        const fullImgUrl = getUrlWithCacheBust(`${API_URL}${currentPhoto.src}`);
+const response = await fetch(fullImgUrl, { headers: NGROK_HEADERS });
         
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         

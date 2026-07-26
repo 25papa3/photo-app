@@ -229,10 +229,14 @@
 
     // 🖼 ngrok警告をバイパスして画像Blobを取得して表示する関数
     async function fetchImageBlob(folder, filename) {
-      const imageUrl = `${API_URL}/images/${folder}/${filename}`;
+      // 💡 unsorted の場合は Python側の「未整理」フォルダ名に合わせる
+      const targetFolder = (folder === 'unsorted') ? '未整理' : folder;
+      const imageUrl = `${API_URL}/images/${encodeURIComponent(targetFolder)}/${encodeURIComponent(filename)}`;
+      
       const response = await fetch(imageUrl, {
         headers: { 'ngrok-skip-browser-warning': 'true' }
       });
+      if (!response.ok) throw new Error("画像の取得に失敗しました");
       const blob = await response.blob();
       return URL.createObjectURL(blob);
     }

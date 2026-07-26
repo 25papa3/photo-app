@@ -222,7 +222,7 @@
       }
     }
 
-    // 🖼 整理画面の描画処理（Blob変換による確実な画像読み込み）
+    // 🖼 整理画面の描画処理（MIMEタイプ指定で確実に画像化）
     async function renderCenterPhoto() {
       const centerBox = document.getElementById("centerBox");
       const countBadge = document.getElementById("countBadge");
@@ -240,12 +240,17 @@
         const img = document.createElement("img");
 
         try {
-          const fullImgUrl = `${API_URL}/api/images/${encodeURIComponent(currentPhoto.folder)}/${encodeURIComponent(currentPhoto.name)}?_=${new Date().getTime()}`;
+          // 💡 unsorted 固定でパスを生成
+          const fullImgUrl = `${API_URL}/api/images/unsorted/${encodeURIComponent(currentPhoto.name)}?_=${new Date().getTime()}`;
           const response = await fetch(fullImgUrl, { headers: NGROK_HEADERS });
           
           if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
           
-          const blob = await response.blob();
+          // 💡 配列バッファ（生のバイナリデータ）として受け取る
+          const arrayBuffer = await response.arrayBuffer();
+          // 💡 明示的に image/jpeg として Blob 化する
+          const blob = new Blob([arrayBuffer], { type: 'image/jpeg' });
+          
           img.src = URL.createObjectURL(blob);
         } catch (err) {
           console.error("画像読み込み失敗:", err);
@@ -361,10 +366,12 @@
 
         if (data.photos && data.photos.length > 0) {
           currentSelectedPhoto = data.photos[0].name;
-          const fullImgUrl = `${API_URL}/api/images/unsorted/${encodeURIComponent(currentPhoto.name)}?_=${new Date().getTime()}`;
+          // 💡 unsorted ではなく encodeURIComponent(folder) を使い、currentSelectedPhoto を渡す
+          const fullImgUrl = `${API_URL}/api/images/${encodeURIComponent(folder)}/${encodeURIComponent(currentSelectedPhoto)}?_=${new Date().getTime()}`;
           
           const imgRes = await fetch(fullImgUrl, { headers: NGROK_HEADERS });
-          const blob = await imgRes.blob();
+          const arrayBuffer = await imgRes.arrayBuffer();
+          const blob = new Blob([arrayBuffer], { type: 'image/jpeg' });
 
           preview.innerHTML = `<img src="${URL.createObjectURL(blob)}">`;
         } else {

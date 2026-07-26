@@ -141,7 +141,7 @@
         .then(() => console.log('PWA Ready!'));
     }
 
-    const API_URL = "https://bulk-diagram-fasting.ngrok-free.dev/api";
+    const API_URL = "https://bulk-diagram-fasting.ngrok-free.dev";
     let videoStream = null;
     let photos = [];
     let currentSelectedPhoto = null;
@@ -190,7 +190,7 @@
       const imageData = canvas.toDataURL('image/jpeg');
 
       try {
-        const res = await fetch(`${API_URL}/upload`, {
+        const res = await fetch(`${API_URL}/api/upload`, {
           method: 'POST',
           headers: { ...NGROK_HEADERS, 'Content-Type': 'application/json' },
           body: JSON.stringify({ image: imageData })
@@ -213,7 +213,7 @@
 
     async function fetchPhotos() {
       try {
-        const res = await fetch(`${API_URL}/photos`, { headers: NGROK_HEADERS });
+        const res = await fetch(`${API_URL}/api/photos`, { headers: NGROK_HEADERS });
         const data = await res.json();
         photos = data.photos || [];
         renderCenterPhoto();
@@ -237,18 +237,14 @@
         card.className = "photo-card";
         card.draggable = true;
 
-        if (currentPhoto.src) {
-          const img = document.createElement("img");
-          img.src = currentPhoto.src;
-          img.onerror = () => {
-            card.innerText = "画像読み込みエラー";
-            card.style.fontSize = "12px";
-          };
-          card.appendChild(img);
-        } else {
-          card.innerText = "画像データなし";
+        const img = document.createElement("img");
+        // API URLを結合（キャッシュ回避のタイムスタンプ付き）
+        img.src = `${API_URL}${currentPhoto.src}?t=${new Date().getTime()}`;
+        img.onerror = () => {
+          card.innerText = "画像読込失敗";
           card.style.fontSize = "12px";
-        }
+        };
+        card.appendChild(img);
 
         // PC用（マウスドラッグ）
         card.addEventListener("dragstart", (e) => {
@@ -309,7 +305,7 @@
     // 写真フォルダ移動APIの呼び出し
     async function movePhotoToFolder(photoName, folderName) {
       try {
-        const res = await fetch(`${API_URL}/organize`, {
+        const res = await fetch(`${API_URL}/api/organize`, {
           method: "POST",
           headers: { ...NGROK_HEADERS, 'Content-Type': 'application/json' },
           body: JSON.stringify({ photo_name: photoName, category: folderName })
@@ -351,14 +347,15 @@
       const preview = document.getElementById('editPreview');
 
       try {
-        const res = await fetch(`${API_URL}/category_photos?category=${encodeURIComponent(folder)}`, {
+        const res = await fetch(`${API_URL}/api/category_photos?category=${encodeURIComponent(folder)}`, {
           headers: NGROK_HEADERS
         });
         const data = await res.json();
 
         if (data.photos && data.photos.length > 0) {
           currentSelectedPhoto = data.photos[0].name;
-          preview.innerHTML = `<img src="${data.photos[0].src}">`;
+          const fullImgUrl = `${API_URL}${data.photos[0].src}?t=${new Date().getTime()}`;
+          preview.innerHTML = `<img src="${fullImgUrl}">`;
         } else {
           currentSelectedPhoto = null;
           preview.innerText = `「${folder}」フォルダに\n写真がありません`;
@@ -373,7 +370,7 @@
       const folder = document.getElementById('folderSelect').value;
 
       try {
-        const res = await fetch(`${API_URL}/edit_photo`, {
+        const res = await fetch(`${API_URL}/api/edit_photo`, {
           method: 'POST',
           headers: { ...NGROK_HEADERS, 'Content-Type': 'application/json' },
           body: JSON.stringify({ category: folder, photo_name: currentSelectedPhoto, action: actionType })

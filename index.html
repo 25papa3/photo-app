@@ -136,263 +136,276 @@
   </div>
 
   <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js')
-        .then(() => console.log('PWA Ready!'));
-    }
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+      .then(() => console.log('PWA Ready!'));
+  }
 
-    const API_URL = "https://bulk-diagram-fasting.ngrok-free.dev";
-    let videoStream = null;
-    let photos = [];
-    let currentSelectedPhoto = null;
+  // 💡 ここを末尾スラッシュなしのngrok URLに統一
+  const API_URL = "https://bulk-diagram-fasting.ngrok-free.dev";
+  let videoStream = null;
+  let photos = [];
+  let currentSelectedPhoto = null;
 
-    const NGROK_HEADERS = {
-      'ngrok-skip-browser-warning': 'true'
-    };
+  const NGROK_HEADERS = {
+    'ngrok-skip-browser-warning': 'true'
+  };
 
-    function showScreen(screenId) {
-      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-      document.getElementById(screenId).classList.add('active');
-    }
+  function showScreen(screenId) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(screenId).classList.add('active');
+  }
 
-    // カメラ機能
-    async function openCamera() {
-      showScreen('screenCamera');
-      try {
-        videoStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: false
-        });
-        const video = document.getElementById('video');
-        video.srcObject = videoStream;
-        await video.play();
-      } catch (err) {
-        alert("カメラの起動に失敗しました。アクセス許可を確認してください。");
-      }
-    }
-
-    function closeCamera() {
-      if (videoStream) {
-        videoStream.getTracks().forEach(track => track.stop());
-        videoStream = null;
-      }
-      showScreen('screenMainMenu');
-    }
-
-    async function takePhoto() {
+  // 1. カメラ機能
+  async function openCamera() {
+    showScreen('screenCamera');
+    try {
+      videoStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false
+      });
       const video = document.getElementById('video');
-      const canvas = document.getElementById('canvas');
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
-
-      const context = canvas.getContext('2d');
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const imageData = canvas.toDataURL('image/jpeg');
-
-      try {
-        const res = await fetch(`${API_URL}/api/upload`, {
-          method: 'POST',
-          headers: { ...NGROK_HEADERS, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: imageData })
-        });
-        const data = await res.json();
-        if (data.status === 'success') {
-          video.style.opacity = '0.3';
-          setTimeout(() => video.style.opacity = '1', 150);
-        }
-      } catch (err) {
-        alert("写真の保存に失敗しました。");
-      }
+      video.srcObject = videoStream;
+      await video.play();
+    } catch (err) {
+      alert("カメラの起動に失敗しました。アクセス許可を確認してください。");
     }
+  }
 
-    // 整理機能
-    async function startSorting() {
-      showScreen('screenSort');
-      await fetchPhotos();
+  function closeCamera() {
+    if (videoStream) {
+      videoStream.getTracks().forEach(track => track.stop());
+      videoStream = null;
     }
+    showScreen('screenMainMenu');
+  }
 
-    async function fetchPhotos() {
-      try {
-        const res = await fetch(`${API_URL}/api/photos`, { headers: NGROK_HEADERS });
-        const data = await res.json();
-        photos = data.photos || [];
-        renderCenterPhoto();
-      } catch (err) {
-        alert("通信エラーが発生しました。");
-      }
-    }
+  async function takePhoto() {
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
 
-    // 🖼 整理画面の描画処理
-    function renderCenterPhoto() {
-      const centerBox = document.getElementById("centerBox");
-      const countBadge = document.getElementById("countBadge");
-      const currentCard = centerBox.querySelector(".photo-card");
-      if (currentCard) currentCard.remove();
+    const context = canvas.getContext('2d');
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = canvas.toDataURL('image/jpeg');
 
-      countBadge.innerText = `残り ${photos.length}枚`;
-
-      if (photos.length > 0) {
-        const currentPhoto = photos[0];
-        const card = document.createElement("div");
-        card.className = "photo-card";
-        card.draggable = true;
-
-        const img = document.createElement("img");
-        // API URLを結合（キャッシュ回避のタイムスタンプ付き）
-        img.src = `${API_URL}${currentPhoto.src}?t=${new Date().getTime()}`;
-        img.onerror = () => {
-          card.innerText = "画像読込失敗";
-          card.style.fontSize = "12px";
-        };
-        card.appendChild(img);
-
-        // PC用（マウスドラッグ）
-        card.addEventListener("dragstart", (e) => {
-          e.dataTransfer.setData("text/plain", JSON.stringify(currentPhoto));
-        });
-
-        // スマホ用（タッチドラッグ）
-        enableTouchDrag(card, currentPhoto);
-
-        centerBox.appendChild(card);
-      } else {
-        const doneMsg = document.createElement("div");
-        doneMsg.innerText = "写真なし🎉";
-        doneMsg.style.color = "#4caf50";
-        centerBox.appendChild(doneMsg);
-      }
-    }
-
-    // 📱 スマホ用タッチ操作ロジック
-    function enableTouchDrag(card, currentPhoto) {
-      let initialX, initialY;
-
-      card.addEventListener("touchstart", (e) => {
-        const touch = e.touches[0];
-        initialX = touch.clientX;
-        initialY = touch.clientY;
-        card.style.transition = "none";
-        card.style.zIndex = "1000";
-      }, { passive: false });
-
-      card.addEventListener("touchmove", (e) => {
-        e.preventDefault();
-        const touch = e.touches[0];
-        const deltaX = touch.clientX - initialX;
-        const deltaY = touch.clientY - initialY;
-
-        card.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(1.05)`;
-      }, { passive: false });
-
-      card.addEventListener("touchend", async (e) => {
-        const touch = e.changedTouches[0];
-        card.style.visibility = "hidden";
-        const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
-        card.style.visibility = "visible";
-
-        const folder = targetElement ? targetElement.closest(".folder") : null;
-
-        if (folder) {
-          const folderName = folder.getAttribute("data-folder");
-          await movePhotoToFolder(currentPhoto.name, folderName);
-        } else {
-          card.style.transition = "transform 0.2s ease";
-          card.style.transform = "translate(0px, 0px) scale(1)";
-        }
+    try {
+      const res = await fetch(`${API_URL}/api/upload`, {
+        method: 'POST',
+        headers: { ...NGROK_HEADERS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: imageData })
       });
-    }
-
-    // 写真フォルダ移動APIの呼び出し
-    async function movePhotoToFolder(photoName, folderName) {
-      try {
-        const res = await fetch(`${API_URL}/api/organize`, {
-          method: "POST",
-          headers: { ...NGROK_HEADERS, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ photo_name: photoName, category: folderName })
-        });
-
-        if (res.ok) {
-          photos.shift();
-          renderCenterPhoto();
-        }
-      } catch (err) {
-        alert("通信エラーが発生しました");
+      const data = await res.json();
+      if (data.status === 'success') {
+        video.style.opacity = '0.3';
+        setTimeout(() => video.style.opacity = '1', 150);
       }
+    } catch (err) {
+      alert("写真の保存に失敗しました。");
     }
+  }
 
-    // PC用ドロップイベント
-    const folders = document.querySelectorAll(".folder");
-    folders.forEach(folder => {
-      folder.addEventListener("dragover", (e) => { e.preventDefault(); folder.classList.add("drag-over"); });
-      folder.addEventListener("dragleave", () => { folder.classList.remove("drag-over"); });
+  // 2. 整理機能
+  async function startSorting() {
+    showScreen('screenSort');
+    await fetchPhotos();
+  }
 
-      folder.addEventListener("drop", async (e) => {
-        e.preventDefault();
-        folder.classList.remove("drag-over");
-        if (photos.length === 0) return;
+  async function fetchPhotos() {
+    try {
+      const res = await fetch(`${API_URL}/api/photos`, { headers: NGROK_HEADERS });
+      const data = await res.json();
+      photos = data.photos || [];
+      renderCenterPhoto();
+    } catch (err) {
+      alert("通信エラーが発生しました。");
+    }
+  }
 
+  // 🖼 整理画面の描画処理（確実なBlob読み込み）
+  async function renderCenterPhoto() {
+    const centerBox = document.getElementById("centerBox");
+    const countBadge = document.getElementById("countBadge");
+    const currentCard = centerBox.querySelector(".photo-card");
+    if (currentCard) currentCard.remove();
+
+    countBadge.innerText = `残り ${photos.length}枚`;
+
+    if (photos.length > 0) {
+      const currentPhoto = photos[0];
+      const card = document.createElement("div");
+      card.className = "photo-card";
+      card.draggable = true;
+
+      const img = document.createElement("img");
+
+      try {
+        // 画像URLを組み立ててfetchで取得
+        const fullImgUrl = `${API_URL}${currentPhoto.src}`;
+        const response = await fetch(fullImgUrl, { headers: NGROK_HEADERS });
+        
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        
+        const blob = await response.blob();
+        img.src = URL.createObjectURL(blob);
+      } catch (err) {
+        console.error("画像読み込み失敗:", err);
+        card.innerText = "画像読込失敗";
+        card.style.fontSize = "12px";
+      }
+
+      card.appendChild(img);
+
+      // PC用（マウスドラッグ）
+      card.addEventListener("dragstart", (e) => {
+        e.dataTransfer.setData("text/plain", JSON.stringify(currentPhoto));
+      });
+
+      // スマホ用（タッチドラッグ）
+      enableTouchDrag(card, currentPhoto);
+
+      centerBox.appendChild(card);
+    } else {
+      const doneMsg = document.createElement("div");
+      doneMsg.innerText = "写真なし🎉";
+      doneMsg.style.color = "#4caf50";
+      centerBox.appendChild(doneMsg);
+    }
+  }
+
+  // スマホ用タッチ操作
+  function enableTouchDrag(card, currentPhoto) {
+    let initialX, initialY;
+
+    card.addEventListener("touchstart", (e) => {
+      const touch = e.touches[0];
+      initialX = touch.clientX;
+      initialY = touch.clientY;
+      card.style.transition = "none";
+      card.style.zIndex = "1000";
+    }, { passive: false });
+
+    card.addEventListener("touchmove", (e) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      const deltaX = touch.clientX - initialX;
+      const deltaY = touch.clientY - initialY;
+
+      card.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(1.05)`;
+    }, { passive: false });
+
+    card.addEventListener("touchend", async (e) => {
+      const touch = e.changedTouches[0];
+      card.style.visibility = "hidden";
+      const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
+      card.style.visibility = "visible";
+
+      const folder = targetElement ? targetElement.closest(".folder") : null;
+
+      if (folder) {
         const folderName = folder.getAttribute("data-folder");
-        await movePhotoToFolder(photos[0].name, folderName);
-      });
+        await movePhotoToFolder(currentPhoto.name, folderName);
+      } else {
+        card.style.transition = "transform 0.2s ease";
+        card.style.transform = "translate(0px, 0px) scale(1)";
+      }
     });
+  }
 
-    // 編集・印刷・共有機能
-    function openEditPrintMode() {
-      showScreen('screenEditPrint');
-      loadCategoryPhotos();
-    }
+  async function movePhotoToFolder(photoName, folderName) {
+    try {
+      const res = await fetch(`${API_URL}/api/organize`, {
+        method: "POST",
+        headers: { ...NGROK_HEADERS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ photo_name: photoName, category: folderName })
+      });
 
-    async function loadCategoryPhotos() {
-      const folder = document.getElementById('folderSelect').value;
-      const preview = document.getElementById('editPreview');
-
-      try {
-        const res = await fetch(`${API_URL}/api/category_photos?category=${encodeURIComponent(folder)}`, {
-          headers: NGROK_HEADERS
-        });
-        const data = await res.json();
-
-        if (data.photos && data.photos.length > 0) {
-          currentSelectedPhoto = data.photos[0].name;
-          const fullImgUrl = `${API_URL}${data.photos[0].src}?t=${new Date().getTime()}`;
-          preview.innerHTML = `<img src="${fullImgUrl}">`;
-        } else {
-          currentSelectedPhoto = null;
-          preview.innerText = `「${folder}」フォルダに\n写真がありません`;
-        }
-      } catch (err) {
-        alert("写真の読み込みに失敗しました");
+      if (res.ok) {
+        photos.shift();
+        renderCenterPhoto();
       }
+    } catch (err) {
+      alert("通信エラーが発生しました");
     }
+  }
 
-    async function applyEffect(actionType) {
-      if (!currentSelectedPhoto) return alert("写真が選択されていません");
-      const folder = document.getElementById('folderSelect').value;
+  const folders = document.querySelectorAll(".folder");
+  folders.forEach(folder => {
+    folder.addEventListener("dragover", (e) => { e.preventDefault(); folder.classList.add("drag-over"); });
+    folder.addEventListener("dragleave", () => { folder.classList.remove("drag-over"); });
 
-      try {
-        const res = await fetch(`${API_URL}/api/edit_photo`, {
-          method: 'POST',
-          headers: { ...NGROK_HEADERS, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ category: folder, photo_name: currentSelectedPhoto, action: actionType })
-        });
-        const data = await res.json();
-        if (data.status === 'success') {
-          loadCategoryPhotos();
-        }
-      } catch (err) {
-        alert("編集処理に失敗しました");
+    folder.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      folder.classList.remove("drag-over");
+      if (photos.length === 0) return;
+
+      const folderName = folder.getAttribute("data-folder");
+      await movePhotoToFolder(photos[0].name, folderName);
+    });
+  });
+
+  // 3. 編集・印刷・共有機能
+  function openEditPrintMode() {
+    showScreen('screenEditPrint');
+    loadCategoryPhotos();
+  }
+
+  async function loadCategoryPhotos() {
+    const folder = document.getElementById('folderSelect').value;
+    const preview = document.getElementById('editPreview');
+
+    try {
+      const res = await fetch(`${API_URL}/api/category_photos?category=${encodeURIComponent(folder)}`, {
+        headers: NGROK_HEADERS
+      });
+      const data = await res.json();
+
+      if (data.photos && data.photos.length > 0) {
+        currentSelectedPhoto = data.photos[0].name;
+        const fullImgUrl = `${API_URL}${data.photos[0].src}`;
+        
+        const imgRes = await fetch(fullImgUrl, { headers: NGROK_HEADERS });
+        const blob = await imgRes.blob();
+
+        preview.innerHTML = `<img src="${URL.createObjectURL(blob)}">`;
+      } else {
+        currentSelectedPhoto = null;
+        preview.innerText = `「${folder}」フォルダに\n写真がありません`;
       }
+    } catch (err) {
+      alert("写真の読み込みに失敗しました");
     }
+  }
 
-    function sharePhoto() {
-      if (!currentSelectedPhoto) return alert("写真が選択されていません");
-      alert(`📤 共有機能：[ ${currentSelectedPhoto} ] を共有準備完了！`);
-    }
+  async function applyEffect(actionType) {
+    if (!currentSelectedPhoto) return alert("写真が選択されていません");
+    const folder = document.getElementById('folderSelect').value;
 
-    function printPhoto() {
-      if (!currentSelectedPhoto) return alert("写真が選択されていません");
-      alert(`🖨 ネット印刷指示：\n予約番号： PRINT-${Math.floor(1000 + Math.random() * 9000)}\n印刷準備完了！`);
+    try {
+      const res = await fetch(`${API_URL}/api/edit_photo`, {
+        method: 'POST',
+        headers: { ...NGROK_HEADERS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category: folder, photo_name: currentSelectedPhoto, action: actionType })
+      });
+      const data = await res.json();
+      if (data.status === 'success') {
+        loadCategoryPhotos();
+      }
+    } catch (err) {
+      alert("編集処理に失敗しました");
     }
-  </script>
+  }
+
+  function sharePhoto() {
+    if (!currentSelectedPhoto) return alert("写真が選択されていません");
+    alert(`📤 共有機能：[ ${currentSelectedPhoto} ] を共有準備完了！`);
+  }
+
+  function printPhoto() {
+    if (!currentSelectedPhoto) return alert("写真が選択されていません");
+    alert(`🖨 ネット印刷指示：\n予約番号： PRINT-${Math.floor(1000 + Math.random() * 9000)}\n印刷準備完了！`);
+  }
+</script>
 </body>
 </html>
